@@ -4,6 +4,10 @@ import sys
 import argparse
 import os.path
 from collections import OrderedDict
+import time
+from time import sleep
+import csv
+import pandas
 
 downloads_path = "./downloads"
 stl_path = os.path.join(downloads_path, "stls")
@@ -18,8 +22,9 @@ if not os.path.exists(json_path):
 
 thingiverse_api_base = "https://api.thingiverse.com/"
 access_keyword = "?access_token="
+
 # Go to https://www.thingiverse.com/apps/create and create your own Desktop app
-api_token = os.environ.get('API_TOKEN')
+api_token = "secret secret"
 
 rest_keywords = {
     "users": "users/",
@@ -34,6 +39,103 @@ rest_keywords = {
 
 hall_of_fame = []
 all_files_flag = False
+
+def log_error(idx):
+    # log the error
+    fields = [idx, "error"]
+    with open(r'./data/errors.csv', 'a') as f:
+        writer = csv.writer(f)
+        writer.writerow(fields)
+
+def log_dne(idx):
+    # log thing ids that do not exist 
+    fields = [idx, "dne"]
+    with open(r'./data/dne.csv', 'a') as f:
+        writer = csv.writer(f)
+        writer.writerow(fields)
+
+def respect_limits(start_time):
+    # we're limited to 300 requests per 5 mins = 1 request per second
+    duration = time.time() - start_time
+
+    if duration < 1:
+        time.sleep(1-duration)
+
+def check_idx(idx, moving_parts_dataset):
+    check = ['id'].eq(idx).any()
+    return check
+
+def get_thing(idx):
+    start_time = time.time()
+
+    rest_url = thingiverse_api_base + rest_keywords["things"] + str(idx) + '/' + access_keyword + api_token
+    s = requests.Session()
+    r = s.get(rest_url)
+    try:
+        data = r.json()
+    except ValueError:
+        print('probably being rate limited')
+
+    
+    if 'error' in data:
+        if "does not exist" in data['error']:
+            log_dne(idx)
+        else:
+            log_error(idx)
+        
+        respect_limits(start_time)
+        return
+
+    
+    # Save a json with the data
+    file_name = './data/jsons/' + str(idx) + '.json'
+    file = open(file_name, "w")
+    file.write(json.dumps(data, indent=4, sort_keys=True, ensure_ascii=False))
+    file.close()
+
+    # and add relevant data to running csv
+    print_settings = data['details_parts'][1]
+    post_processing = data['details_parts'][2]
+    print_settings_flag = False
+    post_processing_flag = False
+    if 'data' in print_settings:
+        print_settings_flag = True
+    if 'data' in post_processing:
+        post_processing_flag = True
+    
+    fields = [idx, print_settings_flag, post_processing_flag]
+
+    with open(r'./data/thing-settings.csv', 'a') as f:
+        writer = csv.writer(f)
+        writer.writerow(fields)
+    
+    respect_limits(start_time)
+
+def to_infinity(start_idx):
+    # get all Things!
+    # some thing IDs don't exist
+    # I first gathered info on all Things so that we can cross-reference the ids to not waste api calls
+    # put the csv in this directory to load it
+    
+    print('loading thingiverse dataset')
+    moving_parts_dataset = pandas.read_csv('./thingiverse.csv')
+
+    newest_thing = 6712795 # as of July 28, 2024 
+    for idx in range(start_idx, newest_thing):
+        print('getting thing #' + str(idx))
+
+        check = check_idx(idx, moving_parts_dataset)
+        if not check:
+            print("DNE according to dataset")
+            log_dne(idx)
+            continue
+
+        try:
+            get_thing(idx)
+        except Exception as e:
+            print("ERROR getting thing #" + str(idx))
+            print(e)
+            log_error(idx)
 
 def load_data():
     # Load the data from the file to a list
@@ -284,7 +386,12 @@ if __name__ == "__main__":
     print("Complex Additive Materials Group")
     print("University of Cambridge")
 
+
+
     parser = argparse.ArgumentParser()
+
+    parser.add_argument("--to-infinity", type=bool, dest="to_infinity",
+                        help="get it all")
 
     parser.add_argument("--newest", type=bool, dest="newest_true",
                         help="It takes the newest objects uploaded")
@@ -313,20 +420,24 @@ if __name__ == "__main__":
 
     load_data()
 
-    if args.all:
-        args.pages = 1000
-    if args.all_files:
-        all_files_flag = True
+    if args.to_infinity:
+        print('to finifinty')
+        to_infinity(500000)
 
-    if args.newest_true:
-        newest(args.newest_true)
-    if args.popular_true:
-        popular(args.popular_true)
-    elif args.username:
-        user(args.username, args.pages)
-    elif args.likes:
-        likes(args.likes, args.pages)
-    elif args.keywords:
-        generic_search(args.keywords, args.pages)
-    else:
-        newest(1)
+    # if args.all:
+    #     args.pages = 1000
+    # if args.all_files:
+    #     all_files_flag = True
+
+    # if args.newest_true:
+    #     newest(args.newest_true)
+    # if args.popular_true:
+    #     popular(args.popular_true)
+    # elif args.username:
+    #     user(args.username, args.pages)
+    # elif args.likes:
+    #     likes(args.likes, args.pages)
+    # elif args.keywords:
+    #     generic_search(args.keywords, args.pages)
+    # else:
+    #     newest(1)
