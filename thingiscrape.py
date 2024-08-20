@@ -49,6 +49,7 @@ def log_error(idx):
 
 def log_dne(idx):
     # log thing ids that do not exist 
+    # if this happens, cross reference with the thingiverse_ids dataset
     fields = [idx, "dne"]
     with open(r'./data/dne.csv', 'a') as f:
         writer = csv.writer(f)
@@ -61,8 +62,8 @@ def respect_limits(start_time):
     if duration < 1:
         time.sleep(1-duration)
 
-def check_idx(idx, moving_parts_dataset):
-    check = ['id'].eq(idx).any()
+def check_idx(idx, thingiverse_ids):
+    check = thingiverse_ids['id'].eq(idx).any()
     return check
 
 def get_thing(idx):
@@ -71,10 +72,10 @@ def get_thing(idx):
     rest_url = thingiverse_api_base + rest_keywords["things"] + str(idx) + '/' + access_keyword + api_token
     s = requests.Session()
     r = s.get(rest_url)
-    try:
-        data = r.json()
-    except ValueError:
-        print('probably being rate limited')
+    #try:
+    data = r.json()
+    #except ValueError:
+        # print('probably being rate limited')
 
     
     if 'error' in data:
@@ -93,7 +94,7 @@ def get_thing(idx):
     file.write(json.dumps(data, indent=4, sort_keys=True, ensure_ascii=False))
     file.close()
 
-    # and add relevant data to running csv
+    # Add relevant settings data to running csv
     print_settings = data['details_parts'][1]
     post_processing = data['details_parts'][2]
     print_settings_flag = False
@@ -112,30 +113,31 @@ def get_thing(idx):
     respect_limits(start_time)
 
 def to_infinity(start_idx):
-    # get all Things!
-    # some thing IDs don't exist
+    # Get all Things!
+    # Some thing IDs don't exist
     # I first gathered info on all Things so that we can cross-reference the ids to not waste api calls
-    # put the csv in this directory to load it
+    # Put the csv in this directory to load it
     
-    print('loading thingiverse dataset')
-    moving_parts_dataset = pandas.read_csv('./thingiverse.csv')
-
-    newest_thing = 6712795 # as of July 28, 2024 
+    print('loading thingiverse dataset...')
+    thingiverse_ids = pandas.read_csv('./thingiverse-ids.csv')
+    newest_thing = thingiverse_ids.max() # as of August 19, 2024 
     for idx in range(start_idx, newest_thing):
         print('getting thing #' + str(idx))
 
-        check = check_idx(idx, moving_parts_dataset)
+        check = check_idx(idx, thingiverse_ids)
         if not check:
             print("DNE according to dataset")
             log_dne(idx)
             continue
-
-        try:
-            get_thing(idx)
-        except Exception as e:
-            print("ERROR getting thing #" + str(idx))
-            print(e)
-            log_error(idx)
+        for attempt in range(100):
+            try:
+                get_thing(idx)
+            except Exception as e:
+                print("ERROR getting thing #" + str(idx))
+                print(e)
+                print("waiting 5 minutes...")
+                time.sleep(300)
+                log_error(idx)
 
 def load_data():
     # Load the data from the file to a list
@@ -421,8 +423,8 @@ if __name__ == "__main__":
     load_data()
 
     if args.to_infinity:
-        print('to finifinty')
-        to_infinity(500000)
+        print('to inifinty!')
+        to_infinity(0)
 
     # if args.all:
     #     args.pages = 1000
