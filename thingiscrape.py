@@ -117,10 +117,9 @@ def to_infinity(start_idx):
     # Some thing IDs don't exist
     # I first gathered info on all Things so that we can cross-reference the ids to not waste api calls
     # Put the csv in this directory to load it
-    
     print('loading thingiverse dataset...')
     thingiverse_ids = pandas.read_csv('./thingiverse-ids.csv')
-    newest_thing = thingiverse_ids.max() # as of August 19, 2024 
+    newest_thing = thingiverse_ids.id.max() # as of August 19, 2024 
     for idx in range(start_idx, newest_thing):
         print('getting thing #' + str(idx))
 
@@ -132,12 +131,14 @@ def to_infinity(start_idx):
         for attempt in range(100):
             try:
                 get_thing(idx)
-            except Exception as e:
+            except:
                 print("ERROR getting thing #" + str(idx))
-                print(e)
                 print("waiting 5 minutes...")
                 time.sleep(300)
                 log_error(idx)
+            else:
+                break
+            
 
 def load_data():
     # Load the data from the file to a list
